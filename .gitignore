@@ -1,0 +1,10 @@
+*.mk
+*.cmd
+*.ko
+*.mod.c
+*.o
+*.symvers
+*.order
+*.mod
+.tmp_versions/
+.vscode/

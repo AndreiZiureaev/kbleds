@@ -1,29 +1,30 @@
 #include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/configfs.h>
-#include <linux/init.h>
-#include <linux/tty.h> /* For fg_console, MAX_NR_CONSOLES */
-#include <linux/kd.h>  /* For KDSETLED */
-#include <linux/vt.h>
-#include <linux/console_struct.h> /* For vc_cons */
+// #include <linux/kernel.h>
+// #include <linux/configfs.h>
+// #include <linux/init.h>
+// #include <linux/tty.h>
+// #include <linux/kd.h>
+// #include <linux/vt.h>
+// #include <linux/console_struct.h>
 #include <linux/vt_kern.h>
+// #include <linux/timer.h>
 
 MODULE_DESCRIPTION("Example module illustrating the use of Keyboard LEDs.");
 MODULE_AUTHOR("Andrei Ziureaev");
 MODULE_LICENSE("GPL");
 
-#define BLINK_DELAY HZ / 5
+#define BLINK_DELAY HZ/2
 #define ALL_LEDS_ON 0x07
 #define RESTORE_LEDS 0xFF
 
 #define BUFLEN 100
 
 static char buf[BUFLEN];
-struct timer_list my_timer;
-struct tty_driver *my_driver;
-char kbledstatus = 0;
+static struct timer_list my_timer;
+static struct tty_driver *my_driver;
+static char kbledstatus = 0;
 
-extern int fg_console;
+// extern int fg_console;
 
 static void print_string(char *str)
 {
@@ -36,31 +37,14 @@ static void print_string(char *str)
     my_tty->driver->ops->write(my_tty, "\015\012", 2);
 }
 
-/*
- * Function my_timer_func blinks the keyboard LEDs periodically by invoking
- * command KDSETLED of ioctl() on the keyboard driver. To learn more on virtual
- * terminal ioctl operations, please see file:
- *     /usr/src/linux/drivers/char/vt_ioctl.c, function vt_ioctl().
- *
- * The argument to KDSETLED is alternatively set to 7 (thus causing the led
- * mode to be set to LED_SHOW_IOCTL, and all the leds are lit) and to 0xFF
- * (any value above 7 switches back the led mode to LED_SHOW_FLAGS, thus
- * the LEDs reflect the actual keyboard status).  To learn more on this,
- * please see file:
- *     /usr/src/linux/drivers/char/keyboard.c, function setledstate().
- *
- */
-
-static void my_timer_func(unsigned long ptr)
+static void my_timer_func(struct timer_list * t)
 {
-    int *pstatus = (int *)ptr;
-
-    if (*pstatus == ALL_LEDS_ON)
-        *pstatus = RESTORE_LEDS;
+    if (kbledstatus == ALL_LEDS_ON)
+        kbledstatus = RESTORE_LEDS;
     else
-        *pstatus = ALL_LEDS_ON;
+        kbledstatus = ALL_LEDS_ON;
 
-    my_driver->ops->ioctl(vc_cons[fg_console].d->port.tty, KDSETLED, *pstatus);
+    my_driver->ops->ioctl(vc_cons[fg_console].d->port.tty, KDSETLED, kbledstatus);
 
     my_timer.expires = jiffies + BLINK_DELAY;
     add_timer(&my_timer);
@@ -89,9 +73,7 @@ static int __init kbleds_init(void)
     scnprintf(buf, BUFLEN, "kbleds: tty driver magic %x\n", my_driver->magic);
     print_string(buf);
 
-    init_timer(&my_timer);
-    my_timer.function = my_timer_func;
-    my_timer.data = (unsigned long)&kbledstatus;
+    timer_setup_on_stack(&my_timer, my_timer_func, 0);
     my_timer.expires = jiffies + BLINK_DELAY;
     add_timer(&my_timer);
 
@@ -101,7 +83,8 @@ static int __init kbleds_init(void)
 static void __exit kbleds_cleanup(void)
 {
     print_string("kbleds: unloading...\n");
-    del_timer(&my_timer);
+    del_timer_sync(&my_timer);
+    destroy_timer_on_stack(&my_timer);
     my_driver->ops->ioctl(vc_cons[fg_console].d->port.tty, KDSETLED, RESTORE_LEDS);
 }
 
