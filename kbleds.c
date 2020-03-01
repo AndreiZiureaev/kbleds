@@ -1,17 +1,11 @@
 #include <linux/module.h>
-// #include <linux/kernel.h>
-// #include <linux/configfs.h>
-// #include <linux/init.h>
-// #include <linux/tty.h>
-// #include <linux/kd.h>
-// #include <linux/vt.h>
-// #include <linux/console_struct.h>
 #include <linux/vt_kern.h>
-// #include <linux/timer.h>
 
 MODULE_DESCRIPTION("Example module illustrating the use of Keyboard LEDs.");
 MODULE_AUTHOR("Andrei Ziureaev");
 MODULE_LICENSE("GPL");
+
+#define PREFIX "kbleds: "
 
 #define BLINK_DELAY HZ/2
 #define ALL_LEDS_ON 0x07
@@ -24,8 +18,7 @@ static struct timer_list my_timer;
 static struct tty_driver *my_driver;
 static char kbledstatus = 0;
 
-// extern int fg_console;
-
+/* Print a line to the console from which the function was called. */
 static void print_string(char *str)
 {
     struct tty_struct *my_tty = get_current_tty();
@@ -34,10 +27,11 @@ static void print_string(char *str)
         return;
 
     my_tty->driver->ops->write(my_tty, str, strlen(str));
+    // print CRLF
     my_tty->driver->ops->write(my_tty, "\015\012", 2);
 }
 
-static void my_timer_func(struct timer_list * t)
+static void my_timer_func(struct timer_list *unused)
 {
     if (kbledstatus == ALL_LEDS_ON)
         kbledstatus = RESTORE_LEDS;
@@ -46,45 +40,45 @@ static void my_timer_func(struct timer_list * t)
 
     my_driver->ops->ioctl(vc_cons[fg_console].d->port.tty, KDSETLED, kbledstatus);
 
-    my_timer.expires = jiffies + BLINK_DELAY;
-    add_timer(&my_timer);
+    if (mod_timer(&my_timer, jiffies + BLINK_DELAY))
+    {
+        printk(KERN_ALERT PREFIX "existing timer modified. Shouldn't happen.");
+    }
 }
 
 static int __init kbleds_init(void)
 {
-    int i;
-
-    print_string("kbleds: loading\n");
-    scnprintf(buf, BUFLEN, "kbleds: fgconsole is %x\n", fg_console);
+    print_string(PREFIX "loading...");
+    scnprintf(buf, BUFLEN, PREFIX "fg_console is %x.", fg_console);
     print_string(buf);
 
-    for (i = 0; i < MAX_NR_CONSOLES; i++)
-    {
-        if (!vc_cons[i].d)
-            break;
-        scnprintf(buf, BUFLEN, "poet_atkm: console[%i/%i] #%i, tty %lx\n", i,
-                  MAX_NR_CONSOLES, vc_cons[i].d->vc_num,
-                  (unsigned long)vc_cons[i].d->port.tty);
-        print_string(buf);
-    }
-    print_string("kbleds: finished scanning consoles\n");
+    if (!vc_cons[fg_console].d)
+        return -1;
+
+    scnprintf(buf, BUFLEN, PREFIX "console[%i/%i] #%i, tty %lx.",
+              fg_console,
+              MAX_NR_CONSOLES,
+              vc_cons[fg_console].d->vc_num,
+              (unsigned long)vc_cons[fg_console].d->port.tty);
+    print_string(buf);
 
     my_driver = vc_cons[fg_console].d->port.tty->driver;
-    scnprintf(buf, BUFLEN, "kbleds: tty driver magic %x\n", my_driver->magic);
+    scnprintf(buf, BUFLEN, PREFIX "tty driver magic %x.", my_driver->magic);
     print_string(buf);
 
-    timer_setup_on_stack(&my_timer, my_timer_func, 0);
-    my_timer.expires = jiffies + BLINK_DELAY;
-    add_timer(&my_timer);
+    timer_setup(&my_timer, my_timer_func, 0);
+    mod_timer(&my_timer, jiffies + BLINK_DELAY);
 
     return 0;
 }
 
 static void __exit kbleds_cleanup(void)
 {
-    print_string("kbleds: unloading...\n");
-    del_timer_sync(&my_timer);
-    destroy_timer_on_stack(&my_timer);
+    print_string(PREFIX "unloading...");
+    if (del_timer(&my_timer))
+    {
+        print_string(PREFIX "deleted active timer.");
+    }
     my_driver->ops->ioctl(vc_cons[fg_console].d->port.tty, KDSETLED, RESTORE_LEDS);
 }
 
