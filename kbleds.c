@@ -42,7 +42,7 @@ static void my_timer_func(struct timer_list *unused)
 
     if (mod_timer(&my_timer, jiffies + BLINK_DELAY))
     {
-        printk(KERN_ALERT PREFIX "existing timer modified. Shouldn't happen.");
+        printk(KERN_ALERT PREFIX "existing timer modified. Shouldn't happen.\n");
     }
 }
 
